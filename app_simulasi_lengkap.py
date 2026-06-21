@@ -6,40 +6,38 @@ import numpy as np
 # Set konfigurasi halaman web
 st.set_page_config(page_title="Simulator Hidrologi Padi Nanjungan", layout="wide")
 
-st.title("🌾 Simulator Hidrologi & Neraca Air Padi Sawah")
+st.title("Simulator Kebutuhan Air Padi Sawah Desa Nanjungan")
 st.markdown("### Studi Kasus: Desa Nanjungan (Model Interaktif Berbasis Basis Data & AI)")
 st.write("Aplikasi ini mensimulasikan kebutuhan air tanaman (ETc) vs pasokan air (Hujan) serta menganalisis risiko defisit air menggunakan pembatas Kelembaban Tanah AI (Threshold 0.80) sesuai standar FAO-56.")
 
-# 1. Load data CSV dan bersihkan nama kolom dari spasi/kapitalisasi
+# 1. Load data CSV dan paksa semua nama kolom menjadi huruf kecil & bersih dari spasi
 @st.cache_data
 def load_data():
     df = pd.read_csv("dasarian_et0_hujan_data_nanjungan.csv")
-    df.columns = df.columns.str.strip()
+    # Mengubah nama kolom menjadi huruf kecil semua dan menghapus spasi gaib
+    df.columns = df.columns.str.strip().str.lower()
     return df
 
-# Fungsi konversi dari nomor dasarian tahunan (1-36) ke indeks baris CSV aktual
+# Fungsi pintar untuk mengambil data berdasarkan urutan baris / indeks
 def dapatkan_baris_data(df, target_dasarian_tahunan):
-    # Jika CSV ternyata menggunakan format 1-36 kumulatif
-    if df['Dasarian'].max() > 12:
-        return df[df['Dasarian'] == target_dasarian_tahunan].iloc[0]
-    else:
-        # Jika CSV menggunakan format bulanan (1,2,3 berulang)
-        # Baris ke-0 adalah Dasarian 1, baris ke-1 adalah Dasarian 2, dst.
-        idx = target_dasarian_tahunan - 1
-        return df.iloc[idx]
+    # Karena kolom sudah dipaksa huruf kecil, kita cari kolom 'dasarian'
+    if 'dasarian' in df.columns and df['dasarian'].max() > 12:
+        res = df[df['dasarian'] == target_dasarian_tahunan]
+        if len(res) > 0:
+            return res.iloc[0]
+    
+    # Jika formatnya bulanan atau kolom tidak klop, ambil berdasarkan urutan baris (0-35)
+    idx = (target_dasarian_tahunan - 1) % len(df)
+    return df.iloc[idx]
 
 # Mulai Blok Proteksi Error
 try:
     df = load_data()
     
-    # Menyamakan nama kolom ke standar kodingan
-    mapping_kolom = {}
-    for col in df.columns:
-        if col.lower() == 'dasarian': mapping_kolom[col] = 'Dasarian'
-        elif col.lower() == 'prectotcorr': mapping_kolom[col] = 'PRECTOTCORR'
-        elif col.lower() == 'et0': mapping_kolom[col] = 'ET0'
-        elif col.lower() == 'gwetroot': mapping_kolom[col] = 'GWETROOT'
-    df = df.rename(columns=mapping_kolom)
+    # Deteksi nama kolom secara fleksibel (tidak peduli huruf besar atau kecil di CSV)
+    kolom_hujan = [c for c in df.columns if 'prectot' in c or 'hujan' in c][0]
+    kolom_et0 = [c for c in df.columns if 'et0' in c][0]
+    kolom_gw = [c for c in df.columns if 'gwet' in c or 'kelembaban' in c][0]
 
     # 2. Sidebar Input Slider untuk Awal Tanam
     st.sidebar.header("Konfigurasi Masa Tanam")
@@ -54,16 +52,16 @@ try:
         idx = (awal_tanam - 1 + i) % 36
         urutan_dasarian.append(idx + 1)
 
-    # Ambil data dinamis dari dataframe berdasarkan fungsi konversi pintar
+    # Ambil data dinamis dari dataframe
     hujan_simulasi = []
     et0_simulasi = []
     kelembaban_simulasi = []
 
     for d in urutan_dasarian:
         row = dapatkan_baris_data(df, d)
-        hujan_simulasi.append(row['PRECTOTCORR'])
-        et0_simulasi.append(row['ET0'])
-        kelembaban_simulasi.append(row['GWETROOT'])
+        hujan_simulasi.append(row[kolom_hujan])
+        et0_simulasi.append(row[kolom_et0])
+        kelembaban_simulasi.append(row[kolom_gw])
 
     # Hitung Kebutuhan Air (ETc)
     etc_simulasi = [et0 * kc for et0, kc in zip(et0_simulasi, kc_padi)]
@@ -79,9 +77,9 @@ try:
             idx_d = (opsi_start - 1 + i) % 36
             row_d = dapatkan_baris_data(df, idx_d + 1)
             
-            hujan_d = row_d['PRECTOTCORR']
-            etc_d = row_d['ET0'] * kc_padi[i]
-            gw_d = row_d['GWETROOT']
+            hujan_d = row_d[kolom_hujan]
+            etc_d = row_d[kolom_et0] * kc_padi[i]
+            gw_d = row_d[kolom_gw]
             
             if 4 <= i <= 8:
                 if hujan_d < etc_d:
@@ -186,8 +184,7 @@ try:
         if gw_val >= 0.80:
             st.warning(f"🟡 **STATUS PERINGATAN (AMAN):** Meskipun Curah Hujan < ETc, **Tanah Masih Menyimpan Cadangan Air** yang memadai (GWETROOT = {gw_val:.2f} >= 0.80). Tanaman belum mengalami cekaman kekeringan akut berkat lengas tanah.")
         else:
-            st.error(f"🔴 **STATUS KRITIS (DEFISIT RIIL):** Curah hujan tidak mencukupi dan **Kelembaban Tanah Kritis** (GWETROOT = {gw_val:.2f} < 0.80). Lahan terkonfirmasi mengalami cekaman kekeringan riil! Diperlukan tambahan air irigasi sebesar {etc_val - hujan_val:.2f} mm.")
+            st.error(f"🔴 **STATUS KRITIS (DEFISIT RIIL):** Curah hujan tidak mencukupi and **Kelembaban Tanah Kritis** (GWETROOT = {gw_val:.2f} < 0.80). Lahan terkonfirmasi mengalami cekaman kekeringan riil! Diperlukan tambahan air irigasi sebesar {etc_val - hujan_val:.2f} mm.")
 
 except Exception as e:
     st.error(f"❌ **Terjadi kendala pembacaan file CSV:** {e}")
-    st.info("Pesan ini muncul karena struktur kolom di file CSV Kakak belum sepenuhnya pas dengan kodingan (misal: penamaan kolom 'Dasarian', 'PRECTOTCORR', 'ET0', atau 'GWETROOT' tidak sengaja tergeser/typo).")
