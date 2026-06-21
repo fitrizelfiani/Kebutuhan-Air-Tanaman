@@ -7,8 +7,8 @@ import numpy as np
 st.set_page_config(page_title="Simulator Hidrologi Padi Nanjungan", layout="wide")
 
 st.title("Simulator Kebutuhan Air Padi Sawah Desa Nanjungan")
-st.markdown("### Studi Kasus: Desa Nanjungan (Model Interaktif Berbasis Basis Data & AI)")
-st.write("Aplikasi ini mensimulasikan kebutuhan air tanaman (ETc) vs pasokan air (Hujan) serta menganalisis risiko defisit air menggunakan pembatas Kelembaban Tanah AI (Threshold 0.80) sesuai standar FAO-56.")
+st.markdown("### Studi Kasus: Desa Nanjungan (Model Interaktif Berbasis Basis Data Iklim & AI)")
+st.write("Aplikasi ini mensimulasikan kebutuhan air tanaman (ETc) vs pasokan air (Hujan) serta menganalisis risiko defisit air menggunakan pembatas Kelembaban Tanah AI (Threshold 0.80) ")
 
 # 1. Load data CSV dan paksa semua nama kolom menjadi huruf kecil & bersih dari spasi
 @st.cache_data
