@@ -92,7 +92,7 @@ try:
 
     # 3. TAMPILKAN GRAFIK UTAMA (DENGAN DOUBLE Y-AXIS)
     st.subheader("📊 Grafik Analisis Hidrologi & Kelembaban Tanah Dinamis")
-    st.write("Geser slider di sidebar untuk melihat respons kelembaban tanah dan neraca air sepanjang 11 dasarian hidup tanaman.")
+    st.write("Geser slider di sidebar untuk melihat respons kelembaban tanah dan neraca air sepanjang 11 dasarian hidup tanaman padi sawah.")
 
     fig1, ax1 = plt.subplots(figsize=(12, 5))
     label_dasarian = [f"D-{d}\n(Fase {i+1})" for i, d in enumerate(urutan_dasarian)]
@@ -179,12 +179,12 @@ try:
         st.metric(label="Status Kadar Lengas Tanah AI (GWETROOT)", value=f"{gw_val:.2f}")
 
     if hujan_val >= etc_val:
-        st.success(f"🟢 **STATUS AMAN (SURPLUS):** Pasokan curah hujan mencukupi kebutuhan penguapan tanaman. Nilai kelembaban tanah terpantau optimal ({gw_val:.2f}).")
+        st.success(f"🟢 **STATUS AMAN (SURPLUS):** Pasokan curah hujan mencukupi kebutuhan evapotranspirasi tanaman. Nilai kelembaban tanah terpantau optimal ({gw_val:.2f}).")
     else:
         if gw_val >= 0.80:
             st.warning(f"🟡 **STATUS PERINGATAN (AMAN):** Meskipun Curah Hujan < ETc, **Tanah Masih Menyimpan Cadangan Air** yang memadai (GWETROOT = {gw_val:.2f} >= 0.80). Tanaman belum mengalami cekaman kekeringan akut berkat lengas tanah.")
         else:
-            st.error(f"🔴 **STATUS KRITIS (DEFISIT RIIL):** Curah hujan tidak mencukupi and **Kelembaban Tanah Kritis** (GWETROOT = {gw_val:.2f} < 0.80). Lahan terkonfirmasi mengalami cekaman kekeringan riil! Diperlukan tambahan air irigasi sebesar {etc_val - hujan_val:.2f} mm.")
+            st.error(f"🔴 **STATUS KRITIS (DEFISIT):** Curah hujan tidak mencukupi and **Kelembaban Tanah Kritis** (GWETROOT = {gw_val:.2f} < 0.80). Lahan terkonfirmasi mengalami cekaman kekeringan! Diperlukan tambahan air irigasi sebesar {etc_val - hujan_val:.2f} mm.")
 
 except Exception as e:
     st.error(f"❌ **Terjadi kendala pembacaan file CSV:** {e}")
