@@ -17,6 +17,17 @@ def load_data():
     df.columns = df.columns.str.strip()
     return df
 
+# Fungsi konversi dari nomor dasarian tahunan (1-36) ke indeks baris CSV aktual
+def dapatkan_baris_data(df, target_dasarian_tahunan):
+    # Jika CSV ternyata menggunakan format 1-36 kumulatif
+    if df['Dasarian'].max() > 12:
+        return df[df['Dasarian'] == target_dasarian_tahunan].iloc[0]
+    else:
+        # Jika CSV menggunakan format bulanan (1,2,3 berulang)
+        # Baris ke-0 adalah Dasarian 1, baris ke-1 adalah Dasarian 2, dst.
+        idx = target_dasarian_tahunan - 1
+        return df.iloc[idx]
+
 # Mulai Blok Proteksi Error
 try:
     df = load_data()
@@ -43,13 +54,13 @@ try:
         idx = (awal_tanam - 1 + i) % 36
         urutan_dasarian.append(idx + 1)
 
-    # Ambil data dinamis dari dataframe berdasarkan urutan dasarian dari slider
+    # Ambil data dinamis dari dataframe berdasarkan fungsi konversi pintar
     hujan_simulasi = []
     et0_simulasi = []
     kelembaban_simulasi = []
 
     for d in urutan_dasarian:
-        row = df[df['Dasarian'] == d].iloc[0]
+        row = dapatkan_baris_data(df, d)
         hujan_simulasi.append(row['PRECTOTCORR'])
         et0_simulasi.append(row['ET0'])
         kelembaban_simulasi.append(row['GWETROOT'])
@@ -66,7 +77,7 @@ try:
         defisit_opsi_ini = 0
         for i in range(11):
             idx_d = (opsi_start - 1 + i) % 36
-            row_d = df[df['Dasarian'] == (idx_d + 1)].iloc[0]
+            row_d = dapatkan_baris_data(df, idx_d + 1)
             
             hujan_d = row_d['PRECTOTCORR']
             etc_d = row_d['ET0'] * kc_padi[i]
