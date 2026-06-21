@@ -1,122 +1,171 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 
-# 1. SETTING LAYOUT UTAMA DASHBOARD
-st.set_page_config(page_title="Simulasi Interaktif Neraca Air", layout="centered")
-st.title("Simulator Kebutuhan Air Tanaman Padi Sawah Desa Nanjungan")
-st.write("Geser slider untuk melihat perbandingan Kebutuhan Air ($ET_c$) dan Pasokan Curah Hujan selama 11 dasarian fase hidup tanaman.")
+# Set konfigurasi halaman web
+st.set_page_config(page_title="Simulator Hidrologi Padi Nanjungan", layout="wide")
 
-# 2. LOAD DATA AKTUAL HISTORIS (ET0 & HUJAN)
+st.title("🌾 Simulator Hidrologi & Neraca Air Padi Sawah")
+st.markdown("### Studi Kasus: Desa Nanjungan (Model Interaktif Berbasis Basis Data & AI)")
+st.write("Aplikasi ini mensimulasikan kebutuhan air tanaman (ETc) vs pasokan air (Hujan) serta menganalisis risiko defisit air menggunakan pembatas Kelembaban Tanah AI (Threshold 0.80) sesuai standar FAO-56.")
+
+# 1. Load data CSV yang sudah di-update
 @st.cache_data
 def load_data():
-    df = pd.read_csv('dasarian_et0_hujan_data_nanjungan.csv')
-    # Menghitung rata-rata ET0 dan Hujan per dasarian tahunan (1 sampai 36)
-    df_grouped = df.groupby(['month', 'dasarian_num']).agg({
-        'ET0_dasarian_mm_dasarian': 'mean',
-        'hujan_dasarian_mm': 'mean'
-    }).reset_index()
-    df_grouped['dasarian_tahunan'] = range(1, 37)
-    return df_grouped
+    df = pd.read_csv("dasarian_et0_hujan_data_nanjungan.csv")
+    return df
 
-df_klimatologi = load_data()
+df = load_data()
 
-# Definisikan Kc Padi Varietas Biasa standar Nedeco/Prosida (11 Dasarian)
-kc_padi = {1: 1.20, 2: 1.20, 3: 1.20, 4: 1.32, 5: 1.40, 6: 1.40, 7: 1.35, 8: 1.24, 9: 1.24, 10: 1.12, 11: 1.12}
+# 2. Sidebar Input Slider untuk Awal Tanam
+st.sidebar.header("Konfigurasi Masa Tanam")
+awal_tanam = st.sidebar.slider("Pilih Dasarian Awal Tanam:", min_value=1, max_value=36, value=2)
 
-# 3. WIDGET SLIDER DINAMIS (1 - 36)
-awal_tanam = st.slider("Pilih Dasarian Awal Tanam (1-36):", min_value=1, max_value=36, value=2)
+# Nilai Kc Padi (11 Dasarian siklus hidup)
+kc_padi = [1.20, 1.20, 1.20, 1.32, 1.40, 1.40, 1.35, 1.24, 1.24, 1.12, 1.12]
 
-# 4. LOGIKA PERGESERAN SIKLUS HIDROLOGI
-siklus_dasarian_dipilih = []
+# Hitung urutan dasarian berdasarkan simulasi slider awal tanam
+urutan_dasarian = []
 for i in range(11):
-    dasarian_skrg = awal_tanam + i
-    if dasarian_skrg > 36:
-        dasarian_skrg = dasarian_skrg - 36
-    siklus_dasarian_dipilih.append(dasarian_skrg)
+    idx = (awal_tanam - 1 + i) % 36
+    urutan_dasarian.append(idx + 1)
 
-et0_fase_hidup = []
-hujan_fase_hidup = []
-for das in siklus_dasarian_dipilih:
-    row = df_klimatologi[df_klimatologi['dasarian_tahunan'] == das]
-    et0_fase_hidup.append(row['ET0_dasarian_mm_dasarian'].values[0])
-    hujan_fase_hidup.append(row['hujan_dasarian_mm'].values[0])
+# Ambil data dinamis dari dataframe berdasarkan urutan dasarian dari slider
+hujan_simulasi = []
+et0_simulasi = []
+kelembaban_simulasi = []
 
-etc_fase_hidup = [et0 * kc_padi[idx+1] for idx, et0 in enumerate(et0_fase_hidup)]
+for d in urutan_dasarian:
+    row = df[df['Dasarian'] == d].iloc[0]
+    hujan_simulasi.append(row['PRECTOTCORR'])
+    et0_simulasi.append(row['ET0'])
+    kelembaban_simulasi.append(row['GWETROOT']) # Membaca kolom kelembaban tanah baru
 
-# 5. RENDERING GRAFIK DENGAN UKURAN PROPORSIONAL
-kolom_kiri, kolom_tengah, kolom_kanan = st.columns([0.05, 0.90, 0.05])
+# Hitung Kebutuhan Air (ETc)
+etc_simulasi = [et0 * kc for et0, kc in zip(et0_simulasi, kc_padi)]
 
-with kolom_tengah:
-    fig, ax = plt.subplots(figsize=(8, 4), dpi=130)
-    tahapan_tanam = np.arange(1, 12)
+# =========================================================
+# LOGIKA EVALUASI NERACA AIR DENGAN PEMBATAS KELEMBABAN 0.80
+# =========================================================
+total_defisit_36_opsi = []
 
-    # Plot Bar Hujan & Line ETc
-    ax.bar(tahapan_tanam, hujan_fase_hidup, color='#A6C8E0', alpha=0.6, width=0.5, label='Pasokan Curah Hujan (mm/dasarian)')
-    ax.plot(tahapan_tanam, etc_fase_hidup, marker='o', linewidth=2.5, color='#1F4E79', label='Kebutuhan Air Tanaman ($ET_c$)')
-    ax.plot(tahapan_tanam, et0_fase_hidup, linestyle='--', linewidth=1.2, color='#8FA9C4', label='Evapotranspirasi Acuan ($ET_0$)')
+for opsi_start in range(1, 37):
+    defisit_opsi_ini = 0
+    for i in range(11):
+        idx_d = (opsi_start - 1 + i) % 36
+        row_d = df[df['Dasarian'] == (idx_d + 1)].iloc[0]
+        
+        hujan_d = row_d['PRECTOTCORR']
+        etc_d = row_d['ET0'] * kc_padi[i]
+        gw_d = row_d['GWETROOT'] # Nilai kelembaban tanah opsi ini
+        
+        # Evaluasi risiko difokuskan pada fase kritis pertengahan (fase generatif)
+        if 4 <= i <= 8:
+            if hujan_d < etc_d:
+                # Logika pembatas: hanya dihitung defisit jika kelembaban tanah di bawah 0.80
+                if gw_d < 0.80:
+                    defisit_opsi_ini += (etc_d - hujan_d)
+                    
+    total_defisit_36_opsi.append(defisit_opsi_ini)
 
-    # Shading Fase Kritis Generatif
-    ax.axvspan(4, 6, color='#E6EEF8', alpha=0.5, label='Fase Kritis Generatif (Pembungaan)')
+# =========================================================
 
-    ax.set_title(f'Simulasi Neraca Air Tanaman Padi - Awal Tanam Dasarian {awal_tanam}', fontsize=11, fontweight='bold', pad=10)
-    ax.set_xlabel('Tahapan Tanam (Dasarian Setelah Tanam)', fontsize=9)
-    ax.set_ylabel('Volume Air (mm/dasarian)', fontsize=9)
-    ax.set_xticks(tahapan_tanam)
-    ax.set_xticklabels([f"{t}\n(D-{d})" for t, d in zip(tahapan_tanam, siklus_dasarian_dipilih)], fontsize=8)
-    ax.grid(axis='y', linestyle=':', alpha=0.5)
-    ax.legend(loc='upper right', frameon=True, facecolor='white', edgecolor='none', fontsize=8)
+# 3. TAMPILKAN GRAFIK UTAMA (DENGAN DOUBLE Y-AXIS)
+st.subheader("📊 Grafik Analisis Hidrologi & Kelembaban Tanah Dinamis")
+st.write("Geser slider di sidebar untuk melihat respons kelembaban tanah dan neraca air sepanjang 11 dasarian hidup tanaman.")
 
-    st.pyplot(fig)
+fig1, ax1 = plt.subplots(figsize=(12, 5))
+label_dasarian = [f"D-{d}\n(Fase {i+1})" for i, d in enumerate(urutan_dasarian)]
+x = np.arange(len(label_dasarian))
 
-# ==========================================
-# 6. FITUR BARU: INSPEKSI TITIK INTERAKTIF (FITUR PESANAN DOSEN)
-# ==========================================
-st.markdown("---")
-st.subheader("🔍 Fitur Inspeksi Titik Dasarian Spesifik")
+# Sumbu Y Kiri untuk volume air (mm)
+ax1.bar(x - 0.2, hujan_simulasi, width=0.4, label="Curah Hujan (mm)", color="skyblue", alpha=0.8)
+ax1.plot(x, etc_simulasi, label="Kebutuhan Air / ETc (mm)", color="red", marker="o", linewidth=2)
+ax1.plot(x, et0_simulasi, label="Evapotranspirasi / ET0 (mm)", color="orange", linestyle="--", marker="x")
+ax1.set_ylabel("Volume Air (mm/Dasarian)", color="darkblue")
+ax1.set_xlabel("Siklus Pertumbuhan Padi (Urutan Dasarian Aktual Berdasarkan Slider)")
+ax1.set_xticks(x)
+ax1.set_xticklabels(label_dasarian)
+ax1.grid(True, alpha=0.3)
 
-# Membuat kotak pilihan dinamis berdasarkan tahapan tanam 1-11
-opsi_inspeksi = [f"Dasarian Ke-{t} Setelah Tanam (Siklus Tahunan: Dasarian {d})" for t, d in zip(tahapan_tanam, siklus_dasarian_dipilih)]
-pilihan_user = st.selectbox("Pilih titik dasarian pertumbuhan yang ingin Anda periksa detailnya:", opsi_inspeksi)
+# Sumbu Y Kanan khusus untuk Kelembaban Tanah (GWETROOT)
+ax2 = ax1.twinx()
+ax2.plot(x, kelembaban_simulasi, label="Kelembaban Tanah (GWETROOT)", color="green", linestyle="-.", marker="s", linewidth=2)
+ax2.set_ylabel("Kadar Kelembaban Tanah (Zona Akar)", color="green")
+ax2.set_ylim(0, 1.2)
+ax2.axhline(0.80, color='red', linestyle=':', alpha=0.7, label='Batas Kritis FAO-56 (0.80)')
 
-# Mendapatkan indeks (0 sampai 10) dari pilihan user
-indeks_terpilih = opsi_inspeksi.index(pilihan_user)
+# Menggabungkan legenda kedua sumbu Y
+lines1, labels1 = ax1.get_legend_handles_labels()
+lines2, labels2 = ax2.get_legend_handles_labels()
+ax1.legend(lines1 + lines2, labels1 + labels2, loc="upper right")
+ax1.axvspan(3.5, 7.5, color='yellow', alpha=0.15, label='Fase Kritis')
+st.pyplot(fig1)
 
-# Mengambil nilai air hujan dan ETc pada titik dasarian terpilih tersebut
-hujan_titik = hujan_fase_hidup[indeks_terpilih]
-etc_titik = etc_fase_hidup[indeks_terpilih]
-selisih_titik = hujan_titik - etc_titik
-dasarian_riil_terpilih = siklus_dasarian_dipilih[indeks_terpilih]
 
-# Menampilkan hasil analisis dalam kotak notifikasi berwarna (Info Box)
-st.write(f"**Hasil Analisis pada {pilihan_user}:**")
+# 4. GRAFIK REKOMENDASI 36 OPSI KALENDER TANAM
+st.subheader("📉 Analisis Risiko Defisit Air pada 36 Opsi Kalender Tanam Padi (IP 300)")
+st.write("Grafik di bawah ini secara otomatis mengunci rekomendasi tanggal tanam dengan mempertimbangkan filter kelembaban tanah 0.80.")
 
-col_inf1, col_inf2 = st.columns(2)
-with col_inf1:
-    st.write(f"🔹 Pasokan Air Hujan: **{hujan_titik:.2f} mm**")
-with col_inf2:
-    st.write(f"🔸 Kebutuhan Air ($ET_c$): **{etc_titik:.2f} mm**")
+fig2, ax3 = plt.subplots(figsize=(14, 4))
+opsi_x = np.arange(1, 37)
+colors = plt.cm.Blues_r(np.array(total_defisit_36_opsi) / max(total_defisit_36_opsi) if max(total_defisit_36_opsi) > 0 else 1)
+bars = ax3.bar(opsi_x, total_defisit_36_opsi, color=colors, edgecolor='grey', alpha=0.85)
 
-if selisih_titik >= 0:
-    st.success(f"✅ **SURPLUS AIR sebesar {abs(selisih_titik):.2f} mm** pada Dasarian {dasarian_riil_terpilih} tahunan. Pasokan curah hujan aman dan mencukupi untuk mendukung metabolisme fase ini.")
-else:
-    st.error(f"⚠️ **DEFISIT AIR sebesar {abs(selisih_titik):.2f} mm** pada Dasarian {dasarian_riil_terpilih} tahunan. Tanaman berisiko mengalami cekaman air jika kelembaban tanah hasil prediksi AI jatuh di bawah ambang kritis.")
+ax3.set_xlabel("Dasarian Awal Masa Tanam 1 (Opsi 1 - 36)")
+ax3.set_ylabel("Total Akumulasi Defisit Air Riil (mm)")
+ax3.set_xticks(opsi_x)
+ax3.grid(True, axis='y', alpha=0.3)
 
-# 7. METRIK RINGKAS KESELURUHAN (TOTAL 3.5 BULAN)
-st.markdown("---")
-st.subheader("📊 Rangkuman Total Neraca Air (Siklus 3.5 Bulan)")
-total_hujan = sum(hujan_fase_hidup)
-total_etc = sum(etc_fase_hidup)
-defisit_neraca = total_hujan - total_etc
+# Tandai rekomendasi terbaik (defisit terkecil)
+rekomendasi_idx = np.argmin(total_defisit_36_opsi) + 1
+ax3.annotate('Rekomendasi Terbaik AI', xy=(rekomendasi_idx, total_defisit_36_opsi[rekomendasi_idx-1]), 
+             xytext=(rekomendasi_idx+2, total_defisit_36_opsi[rekomendasi_idx-1]+5),
+             arrowprops=dict(facecolor='orange', shrink=0.05, width=2, headwidth=8))
+st.pyplot(fig2)
 
-col1, col2, col3 = st.columns(3)
+
+# 5. TABEL DETAIL DATA SIMULASI
+st.subheader("📋 Tabel Rincian Parameter Hidrologi & AI")
+df_tabel = pd.DataFrame({
+    "Fase Pertumbuhan": [f"Dasarian Ke-{i+1}" for i in range(11)],
+    "Dasarian Kalender": urutan_dasarian,
+    "Curah Hujan (mm)": hujan_simulasi,
+    "ET0 Acuan (mm)": et0_simulasi,
+    "Koefisien Kc": kc_padi,
+    "ETc Tanaman (mm)": etc_simulasi,
+    "Kelembaban Tanah AI (GWETROOT)": kelembaban_simulasi
+})
+st.dataframe(df_tabel.style.format({
+    "Curah Hujan (mm)": "{:.2f}",
+    "ET0 Acuan (mm)": "{:.2f}",
+    "Koefisien Kc": "{:.2f}",
+    "ETc Tanaman (mm)": "{:.2f}",
+    "Kelembaban Tanah AI (GWETROOT)": "{:.2f}"
+}), use_container_width=True)
+
+    
+# 6. KOTAK ALERT INTERAKTIF BERDASARKAN FILTER SLIDER
+st.subheader("🔍 Inspeksi Titik Fase Pertumbuhan (Berdasarkan Slider)")
+pilihan_fase = st.selectbox("Pilih Fase Pertumbuhan Tanaman untuk Dievaluasi:", df_tabel["Fase Pertumbuhan"])
+
+row_pilihan = df_tabel[df_tabel["Fase Pertumbuhan"] == pilihan_fase].iloc[0]
+hujan_val = row_pilihan["Curah Hujan (mm)"]
+etc_val = row_pilihan["ETc Tanaman (mm)"]
+gw_val = row_pilihan["Kelembaban Tanah AI (GWETROOT)"]
+
+col1, col2 = st.columns(2)
 with col1:
-    st.metric(label="Total Pasokan Air Hujan", value=f"{total_hujan:.2f} mm")
+    st.metric(label="Neraca Air Klimatologis (Hujan - ETc)", value=f"{hujan_val - etc_val:.2f} mm")
 with col2:
-    st.metric(label="Total Kebutuhan Air ($ET_c$)", value=f"{total_etc:.2f} mm")
-with col3:
-    if defisit_neraca >= 0:
-        st.metric(label="Status Akhir Siklus", value="SURPLUS", delta=f"+{defisit_neraca:.2f} mm")
+    st.metric(label="Status Kadar Lengas Tanah AI (GWETROOT)", value=f"{gw_val:.2f}")
+
+# Aturan Logika Keputusan Alert Box
+if hujan_val >= etc_val:
+    st.success(f"🟢 **STATUS AMAN (SURPLUS):** Pasokan curah hujan mencukupi kebutuhan penguapan tanaman. Nilai kelembaban tanah terpantau optimal ({gw_val:.2f}).")
+else:
+    if gw_val >= 0.80:
+        st.warning(f"🟡 **STATUS PERINGATAN (AMAN):** Meskipun Curah Hujan < ETc, **Tanah Masih Menyimpan Cadangan Air** yang memadai (GWETROOT = {gw_val:.2f} $\ge$ 0.80). Tanaman belum mengalami cekaman kekeringan akut berkat lengas tanah.")
     else:
-        st.metric(label="Status Akhir Siklus", value="DEFISIT", delta=f"{defisit_neraca:.2f} mm", delta_color="inverse")
+        st.error(f"🔴 **STATUS KRITIS (DEFISIT RIIL):** Curah hujan tidak mencukupi dan **Kelembaban Tanah Kritis** (GWETROOT = {gw_val:.2f} < 0.80). Lahan terkonfirmasi mengalami cekaman kekeringan riil! Diperlukan tambahan air irigasi sebesar {etc_val - hujan_val:.2f} mm.")
