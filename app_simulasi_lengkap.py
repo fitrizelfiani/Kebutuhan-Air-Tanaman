@@ -14,10 +14,10 @@ st.write("Aplikasi ini mensimulasikan kebutuhan air tanaman (ETc) vs pasokan air
 @st.cache_data
 def load_data():
     df = pd.read_csv("dasarian_et0_hujan_data_nanjungan.csv")
-    # Otomatis menghapus spasi di awal/akhir nama kolom dan mengubahnya jadi huruf kecil agar kebal error
     df.columns = df.columns.str.strip()
     return df
 
+# Mulai Blok Proteksi Error
 try:
     df = load_data()
     
@@ -116,7 +116,12 @@ try:
 
     fig2, ax3 = plt.subplots(figsize=(14, 4))
     opsi_x = np.arange(1, 37)
-    colors = plt.cm.Blues_r(np.array(total_defisit_36_opsi) / max(total_defisit_36_opsi) if max(total_defisit_36_opsi) > 0 else 1)
+    
+    if max(total_defisit_36_opsi) > 0:
+        colors = plt.cm.Blues_r(np.array(total_defisit_36_opsi) / max(total_defisit_36_opsi))
+    else:
+        colors = 'skyblue'
+        
     bars = ax3.bar(opsi_x, total_defisit_36_opsi, color=colors, edgecolor='grey', alpha=0.85)
 
     ax3.set_xlabel("Dasarian Awal Masa Tanam 1 (Opsi 1 - 36)")
@@ -128,7 +133,7 @@ try:
     ax3.annotate('Rekomendasi Terbaik AI', xy=(rekomendasi_idx, total_defisit_36_opsi[rekomendasi_idx-1]), 
                  xytext=(rekomendasi_idx+2, total_defisit_36_opsi[rekomendasi_idx-1]+5),
                  arrowprops=dict(facecolor='orange', shrink=0.05, width=2, headwidth=8))
-st.pyplot(fig2)
+    st.pyplot(fig2)
 
     # 5. TABEL DETAIL DATA SIMULASI
     st.subheader("📋 Tabel Rincian Parameter Hidrologi & AI")
